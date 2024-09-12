@@ -21,6 +21,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "ring_buffer.h"
+#include"ssd1306.h"
+#include"ssd1306_fonts.h"
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -40,9 +43,19 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+I2C_HandleTypeDef hi2c1;
+
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+uint8_t data_usart2;
+uint8_t newline[] = "\r\n";
+
+#define BUFFER_CAPACITY 10
+uint8_t keyboard_buffer_memory[BUFFER_CAPACITY];
+ring_buffer_t keyboard_ring_buffer;
+uint8_t first_key_pressed = 0;
+
 
 /* USER CODE END PV */
 
@@ -50,6 +63,7 @@ UART_HandleTypeDef huart2;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -66,7 +80,81 @@ int _write(int file, char *ptr, int len)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 
+	uint8_t key_pressed = keypad_scan(GPIO_Pin);
+	if(key_pressed != 0XFF){
+		HAL_UART_Transmit(&huart2,&key_pressed,1,10);
+
+
+
+
+		 //ssd1306_Fill(Black);
+		 ssd1306_SetCursor(10,30);
+		 ssd1306_WriteString(&key_pressed,Font_6x8,White);
+		 ssd1306_UpdateScreen();
+
+	}
+
+	uint8_t byte2 = 0;
+
+
+    if (key_pressed != 0xFF) {
+        // Escribir la tecla en el ring buffer
+        ring_buffer_write(&keyboard_ring_buffer, key_pressed);
+
+        // Verificar si el buffer está lleno
+        if (ring_buffer_is_full(&keyboard_ring_buffer)) {
+            // Aqui decides que hacer cuando el buffer este lleno
+            // Ejemplo: transmitir todos los datos en el buffer por UART
+        	uint8_t id_incorrect2=0;
+        	uint8_t my_id2[] = "1006554210";
+        	for(uint8_t idx2=0; idx2<sizeof(my_id2);idx2++){
+        		if(ring_buffer_read(&keyboard_ring_buffer,&byte2)!=0){
+        			if(byte2 != my_id2[idx2]){
+        				id_incorrect2 = 1;
+
+        			}
+        		}
+        	}
+            HAL_UART_Transmit(&huart2, newline, 2, 10);
+
+        	if(!id_incorrect2){
+
+        		  ssd1306_Fill(Black);
+        		  ssd1306_SetCursor(10,20);
+        		  ssd1306_WriteString("contrasena correcta",Font_6x8,White);
+        		  ssd1306_UpdateScreen();
+
+
+        		HAL_UART_Transmit(&huart2,"Contrasena Correcta\n\r",21,10);
+                HAL_UART_Transmit(&huart2, newline, 2, 10);
+        		HAL_UART_Transmit(&huart2,"Iniciando...\n\r",14,10);
+                HAL_UART_Transmit(&huart2, newline, 2, 10);
+
+        	}else{
+
+      		    ssd1306_Fill(Black);
+      		    ssd1306_SetCursor(10,20);
+      		    ssd1306_WriteString("Incorrecta",Font_6x8,White);
+      		    ssd1306_UpdateScreen();
+
+        		HAL_UART_Transmit(&huart2,"Incorrecto\n\r",12,10);
+                HAL_UART_Transmit(&huart2, newline, 2, 10);
+
+
+
+        	}
+
+        	ring_buffer_reset(&keyboard_ring_buffer);
+        }
+
+    }
+
+
 }
+
+
+
+
 /* USER CODE END 0 */
 
 /**
@@ -99,7 +187,14 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART2_UART_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
+  ring_buffer_init(&keyboard_ring_buffer, keyboard_buffer_memory, BUFFER_CAPACITY);
+  ssd1306_Init();
+  ssd1306_Fill(Black);
+  ssd1306_SetCursor(10,20);
+  ssd1306_WriteString("iniciando",Font_6x8,White);
+  ssd1306_UpdateScreen();
 
   /* USER CODE END 2 */
 
@@ -163,6 +258,54 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x10909CEC;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
@@ -232,20 +375,20 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : COL_1_Pin */
-  GPIO_InitStruct.Pin = COL_1_Pin;
+  /*Configure GPIO pin : COLUMN_1_Pin */
+  GPIO_InitStruct.Pin = COLUMN_1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(COL_1_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(COLUMN_1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : COL_4_Pin */
-  GPIO_InitStruct.Pin = COL_4_Pin;
+  /*Configure GPIO pin : COLUMN_4_Pin */
+  GPIO_InitStruct.Pin = COLUMN_4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(COL_4_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(COLUMN_4_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : COL_2_Pin COL_3_Pin */
-  GPIO_InitStruct.Pin = COL_2_Pin|COL_3_Pin;
+  /*Configure GPIO pins : COLUMN_2_Pin COLUMN_3_Pin */
+  GPIO_InitStruct.Pin = COLUMN_2_Pin|COLUMN_3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
