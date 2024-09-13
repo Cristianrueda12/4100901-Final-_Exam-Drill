@@ -19,8 +19,14 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <string.h> // Asegúrate de incluir esta cabecera
+#include "keypad.h" // Incluye el encabezado para keypad_scan
+
+#include "flashing_light.h"
+
 #include "ring_buffer.h"
 #include"ssd1306.h"
 #include"ssd1306_fonts.h"
@@ -55,6 +61,30 @@ uint8_t newline[] = "\r\n";
 uint8_t keyboard_buffer_memory[BUFFER_CAPACITY];
 ring_buffer_t keyboard_ring_buffer;
 uint8_t first_key_pressed = 0;
+uint8_t cursor_x_position = 10;  // Control de la posición del cursor horizontal
+uint8_t cursor_y_position = 30;  // Línea en la que aparecerán las teclas
+uint8_t max_cursor_x_position = 80;
+
+#define MAX_DISPLAY_CHARS 20 // Ajusta este valor según el tamaño de la pantalla y el tamaño del texto
+
+// Buffer para almacenar la secuencia de teclas
+static char display_buffer[MAX_DISPLAY_CHARS + 1]; // +1 para el terminador nulo
+static uint8_t buffer_index = 0; // Asegúrate de que esta definición sea única
+
+// Variables para la posición actual del cursor en la pantalla
+static uint8_t cursor_x = 10;
+static uint8_t cursor_y = 30;
+uint16_t left_toggles=0;
+uint8_t incorrect_password_toggles = 6;  // Parpadeos para contraseña incorrecta
+uint32_t incorrect_password_interval = 125;  // 125 ms entre parpadeos
+uint16_t left_toggles2=0;
+uint8_t warning_toggles = 10;  // Parpadeos para otro caso
+uint32_t warning_interval = 500;  // 500 ms entre parpadeos
+uint8_t flashing_active = 0;  // Bandera para activar o desactivar el parpadeo
+uint8_t flashing_active2=0;
+uint8_t flashing_frequency=0;
+uint8_t flashing_frequency2=0;
+
 
 
 /* USER CODE END PV */
@@ -64,6 +94,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
+void clear_line(uint8_t y_position);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -77,80 +108,108 @@ int _write(int file, char *ptr, int len)
   return len;
 }
 
+
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-
-	uint8_t key_pressed = keypad_scan(GPIO_Pin);
-	if(key_pressed != 0XFF){
-		HAL_UART_Transmit(&huart2,&key_pressed,1,10);
-
-
-
-
-		 //ssd1306_Fill(Black);
-		 ssd1306_SetCursor(10,30);
-		 ssd1306_WriteString(&key_pressed,Font_6x8,White);
-		 ssd1306_UpdateScreen();
-
-	}
-
-	uint8_t byte2 = 0;
-
+    uint8_t key_pressed = keypad_scan(GPIO_Pin);
 
     if (key_pressed != 0xFF) {
-        // Escribir la tecla en el ring buffer
-        ring_buffer_write(&keyboard_ring_buffer, key_pressed);
-
-        // Verificar si el buffer está lleno
-        if (ring_buffer_is_full(&keyboard_ring_buffer)) {
-            // Aqui decides que hacer cuando el buffer este lleno
-            // Ejemplo: transmitir todos los datos en el buffer por UART
-        	uint8_t id_incorrect2=0;
-        	uint8_t my_id2[] = "1006554210";
-        	for(uint8_t idx2=0; idx2<sizeof(my_id2);idx2++){
-        		if(ring_buffer_read(&keyboard_ring_buffer,&byte2)!=0){
-        			if(byte2 != my_id2[idx2]){
-        				id_incorrect2 = 1;
-
-        			}
-        		}
-        	}
-            HAL_UART_Transmit(&huart2, newline, 2, 10);
-
-        	if(!id_incorrect2){
-
-        		  ssd1306_Fill(Black);
-        		  ssd1306_SetCursor(10,20);
-        		  ssd1306_WriteString("contrasena correcta",Font_6x8,White);
-        		  ssd1306_UpdateScreen();
 
 
-        		HAL_UART_Transmit(&huart2,"Contrasena Correcta\n\r",21,10);
-                HAL_UART_Transmit(&huart2, newline, 2, 10);
-        		HAL_UART_Transmit(&huart2,"Iniciando...\n\r",14,10);
-                HAL_UART_Transmit(&huart2, newline, 2, 10);
+        // Si se presiona '*', reinicia la secuencia
+        if (key_pressed == '*') {
+            ring_buffer_reset(&keyboard_ring_buffer);
+            memset(display_buffer, 0, sizeof(display_buffer)); // Limpiar el buffer de pantalla
+            buffer_index = 0; // Reiniciar el índice del buffer
 
-        	}else{
-
-      		    ssd1306_Fill(Black);
-      		    ssd1306_SetCursor(10,20);
-      		    ssd1306_WriteString("Incorrecta",Font_6x8,White);
-      		    ssd1306_UpdateScreen();
-
-        		HAL_UART_Transmit(&huart2,"Incorrecto\n\r",12,10);
-                HAL_UART_Transmit(&huart2, newline, 2, 10);
-
-
-
-        	}
-
-        	ring_buffer_reset(&keyboard_ring_buffer);
+            ssd1306_Fill(Black);
+            ssd1306_SetCursor(10, 20);
+            ssd1306_WriteString("Secuencia reiniciada", Font_6x8, White);
+            ssd1306_UpdateScreen();
+            HAL_UART_Transmit(&huart2, (uint8_t*)"Secuencia reiniciada\n\r", 22, 10);
+            return;
         }
 
+        // Escribir la tecla en el ring buffer
+        if (key_pressed != '#') {
+            ring_buffer_write(&keyboard_ring_buffer, key_pressed);
+
+            // Agregar el carácter al buffer de pantalla
+            if (buffer_index < MAX_DISPLAY_CHARS) {
+                display_buffer[buffer_index++] = key_pressed;
+                display_buffer[buffer_index] = '\0'; // Null-terminar el buffer
+
+                // Limpiar la pantalla y mostrar el contenido del buffer
+                ssd1306_Fill(Black);
+                ssd1306_SetCursor(10, 30);
+                ssd1306_WriteString(display_buffer, Font_6x8, White);
+                ssd1306_UpdateScreen();
+
+                // Transmitir el carácter a través de UART en tiempo real
+                HAL_UART_Transmit(&huart2, &key_pressed, 1, 10);
+            }
+            return;
+        }
+
+        // Si se presiona '#', verifica la clave ingresada
+        uint8_t byte2 = 0;
+        uint8_t id_incorrect2 = 0;
+        uint8_t my_id2[] = "1006816112";  // Clave correcta
+
+        // Leer del buffer y comparar con la clave correcta
+        for (uint8_t idx2 = 0; idx2 < sizeof(my_id2) - 1; idx2++) {
+            if (ring_buffer_read(&keyboard_ring_buffer, &byte2) != 0) {
+                if (byte2 != my_id2[idx2]) {
+                    id_incorrect2 = 1;  // Marcar como incorrecto si no coincide
+                    break;
+                }
+            } else {
+                id_incorrect2 = 1;  // Si no hay suficientes caracteres en el buffer
+                break;
+            }
+        }
+
+        HAL_UART_Transmit(&huart2, (uint8_t*)"\n", 1, 10);
+
+        if (!id_incorrect2) {
+            // Contraseña correcta
+            ssd1306_Fill(Black);
+            ssd1306_SetCursor(10, 20);
+            ssd1306_WriteString("Contrasena correcta", Font_6x8, White);
+            ssd1306_UpdateScreen();
+            HAL_UART_Transmit(&huart2, (uint8_t*)"Contrasena Correcta\n\r", 21, 10);
+            HAL_UART_Transmit(&huart2, (uint8_t*)"Iniciando...\n\r", 14, 10);
+            // Activar parpadeo con frecuencia de 4 Hz y 6 parpadeos
+            left_toggles2 = 1;  // 6 parpadeos
+            flashing_active2 = 1;  // Activar bandera
+            flashing_frequency2 = 0xFF;
+
+
+        } else {
+            // Contraseña incorrecta
+            ssd1306_Fill(Black);
+            ssd1306_SetCursor(10, 20);
+            ssd1306_WriteString("Incorrecta", Font_6x8, White);
+            ssd1306_UpdateScreen();
+            HAL_UART_Transmit(&huart2, (uint8_t*)"Incorrecto\n\r", 12, 10);
+
+            // Activar parpadeo con frecuencia de 4 Hz y 6 parpadeos
+            left_toggles = 6;  // 6 parpadeos
+            flashing_active = 1;  // Activar bandera
+            flashing_frequency = 125;
+        }
+
+        // Reinicia el buffer después de verificar
+        ring_buffer_reset(&keyboard_ring_buffer);
+        memset(display_buffer, 0, sizeof(display_buffer)); // Limpiar el buffer de pantalla
+        buffer_index = 0; // Reiniciar el índice del buffer
+        cursor_x = 10;  // Reinicia la posición horizontal del cursor
+        cursor_y = 30;  // Reinicia la posición vertical del curso
     }
-
-
 }
+
+
 
 
 
@@ -196,6 +255,8 @@ int main(void)
   ssd1306_WriteString("iniciando",Font_6x8,White);
   ssd1306_UpdateScreen();
 
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -203,7 +264,29 @@ int main(void)
   printf("Starting...\r\n");
   while (1)
   {
+
+
     /* USER CODE END WHILE */
+	  if (flashing_active) {
+	      flashing_signal(flashing_frequency, &left_toggles);
+
+	      // Desactivar la bandera cuando el parpadeo termina
+	      if (left_toggles == 0) {
+	          flashing_active = 0;
+	      }
+	  }
+	  if(flashing_active2){
+	      flashing_signal(flashing_frequency2, &left_toggles2);
+
+	      // Desactivar la bandera cuando el parpadeo termina
+	      if (left_toggles2 == 0) {
+	          flashing_active2 = 0;
+	      }
+
+
+	  }
+
+
 
     /* USER CODE BEGIN 3 */
   }
@@ -214,6 +297,18 @@ int main(void)
   * @brief System Clock Configuration
   * @retval None
   */
+
+
+
+void clear_line(uint8_t y_position) {
+    // Colocar el cursor al inicio de la línea
+    ssd1306_SetCursor(10, y_position);
+    // Escribir una línea de espacios para "borrar" la línea
+    ssd1306_WriteString("                ", Font_6x8, Black);  // Ajusta la cantidad de espacios según el tamaño de la pantalla
+    ssd1306_UpdateScreen();
+}
+
+
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -324,7 +419,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 256000;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;

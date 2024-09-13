@@ -1,0 +1,2 @@
+../Core/Src/keypad.c:30:9:keypad_scan_row	4
+../Core/Src/keypad.c:68:9:keypad_scan	8
