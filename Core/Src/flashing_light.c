@@ -8,7 +8,8 @@
 #include "flashing_light.h"
 #include "main.h"
 
-void flashing_signal(uint32_t interval_ms, uint8_t *toggles_count) {
+
+void flashing_signal(GPIO_TypeDef* GPIO_Port, uint16_t GPIO_Pin, uint32_t interval_ms, uint8_t *toggles_count) {
     static uint32_t tunr_togle_tick = 0;
 
     // Obtenemos el tiempo actual
@@ -19,14 +20,15 @@ void flashing_signal(uint32_t interval_ms, uint8_t *toggles_count) {
             // Actualiza el tiempo para el siguiente parpadeo basado en el intervalo deseado
             tunr_togle_tick = current_tick + interval_ms;
 
-            // Cambiar el estado del LED
-            HAL_GPIO_TogglePin(SYSTEM_LED_GPIO_Port, SYSTEM_LED_Pin);
+            // Cambiar el estado del pin especificado
+            HAL_GPIO_TogglePin(GPIO_Port, GPIO_Pin);
 
             // Reducir el contador de parpadeos
             (*toggles_count)--;
         } else {
-            // Si no quedan parpadeos, asegurarse de que el LED esté apagado
-            HAL_GPIO_WritePin(SYSTEM_LED_GPIO_Port, SYSTEM_LED_Pin, 0);
+            // Si no quedan parpadeos, asegurarse de que el pin esté apagado
+            HAL_GPIO_WritePin(GPIO_Port, GPIO_Pin, GPIO_PIN_RESET);
         }
     }
 }
+

@@ -155,7 +155,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
         // Si se presiona '#', verifica la clave ingresada
         uint8_t byte2 = 0;
         uint8_t id_incorrect2 = 0;
-        uint8_t my_id2[] = "1006816112";  // Clave correcta
+        uint8_t my_id2[] = "1053871674";  // Clave correcta
 
         // Leer del buffer y comparar con la clave correcta
         for (uint8_t idx2 = 0; idx2 < sizeof(my_id2) - 1; idx2++) {
@@ -268,7 +268,8 @@ int main(void)
 
     /* USER CODE END WHILE */
 	  if (flashing_active) {
-	      flashing_signal(flashing_frequency, &left_toggles);
+
+	      flashing_signal(GPIOA, GPIO_PIN_5, flashing_frequency, &left_toggles);
 
 	      // Desactivar la bandera cuando el parpadeo termina
 	      if (left_toggles == 0) {
@@ -276,7 +277,7 @@ int main(void)
 	      }
 	  }
 	  if(flashing_active2){
-	      flashing_signal(flashing_frequency2, &left_toggles2);
+		  flashing_signal(GPIOA, GPIO_PIN_5, flashing_frequency2, &left_toggles2);
 
 	      // Desactivar la bandera cuando el parpadeo termina
 	      if (left_toggles2 == 0) {
